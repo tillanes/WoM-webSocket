@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const socketAuthorization = require('./middleware/socketAuthorization');
 const messageHandler = require('./handlers/messageHandler');
+const tokenExpiryHandler = require('./handlers/tokenExpiryHandler');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -18,6 +19,7 @@ io.on('connection', (socket) => {
   num += 1;
   console.log('a user connected: ' + num + ' (' + socket.authUser.username + ')');
   messageHandler(io, socket);
+  tokenExpiryHandler(socket);
   
   socket.on('disconnect', () => {
     console.log('user disconnected');

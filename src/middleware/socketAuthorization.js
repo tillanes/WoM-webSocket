@@ -14,6 +14,11 @@ module.exports = (socket, next) => {
         next()
     } catch (error) {
         console.log(error.message)
+        if (error.name === 'TokenExpiredError') {
+            const err = new Error("Token expired")
+            err.data = { status: 401 }
+            return next(err)
+        }
         next(new Error("Authorization failed"))
     }
 }

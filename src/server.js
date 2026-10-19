@@ -11,6 +11,9 @@ const io = new Server(server, {
   cors: { origin: '*' },
 });
 
+
+app.use(express.static(__dirname + '/public'))
+
 io.use(socketAuthorization);
 
 let num = 0;

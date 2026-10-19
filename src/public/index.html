@@ -1,0 +1,253 @@
+//Dokumentationen är gjort med AI
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WoM WebSocket API</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --fg: #1f2328;
+            --muted: #59636e;
+            --border: #d1d9e0;
+            --code-bg: #f6f8fa;
+            --accent: #0969da;
+            --client: #1a7f37;
+            --server: #8250df;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0d1117;
+                --fg: #e6edf3;
+                --muted: #9198a1;
+                --border: #3d444d;
+                --code-bg: #161b22;
+                --accent: #4493f8;
+                --client: #3fb950;
+                --server: #ab7df8;
+            }
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+        main {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 32px 16px 64px;
+        }
+        h1 { margin-top: 0; }
+        h2 {
+            margin-top: 48px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        h3 { margin-top: 32px; }
+        p.lead { color: var(--muted); font-size: 1.1em; }
+        code {
+            font-family: ui-monospace, Consolas, monospace;
+            font-size: 0.9em;
+            background: var(--code-bg);
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 16px;
+            overflow-x: auto;
+        }
+        pre code { background: none; padding: 0; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        th { color: var(--muted); font-weight: 600; font-size: 0.9em; }
+        .table-wrap { overflow-x: auto; }
+        .tag {
+            display: inline-block;
+            font-size: 0.75em;
+            font-weight: 600;
+            padding: 1px 8px;
+            border-radius: 999px;
+            border: 1px solid currentColor;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+        .tag.client { color: var(--client); }
+        .tag.server { color: var(--server); }
+        .note {
+            border-left: 4px solid var(--accent);
+            background: var(--code-bg);
+            padding: 10px 16px;
+            border-radius: 0 6px 6px 0;
+        }
+        a { color: var(--accent); }
+    </style>
+</head>
+<body>
+<main>
+
+    <h1>WoM WebSocket API</h1>
+    <p class="lead">
+        A real-time messaging server built on Socket.IO. Clients connect with a JWT,
+        and every connection belonging to the same user shares one room, so messages
+        and typing updates sync across all of that user's tabs and devices.
+    </p>
+
+    <h2>Overview</h2>
+    <div class="table-wrap">
+        <table>
+            <tr><th>Base URL</th><td><code>https://wom-websocket.onrender.com</code></td></tr>
+            <tr><th>Protocol</th><td>Socket.IO v4 (WebSocket with HTTP long-polling fallback)</td></tr>
+            <tr><th>Auth</th><td>JWT in the <code>Authorization</code> header, verified with <code>JWT_SECRET</code></td></tr>
+            <tr><th>CORS</th><td>All origins allowed (<code>*</code>)</td></tr>
+        </table>
+    </div>
+
+    <h3>HTTP</h3>
+    <p>
+        The only HTTP endpoint is <code>GET /</code>, which serves static files from
+        <code>src/public/</code> (this page). Everything else goes over Socket.IO.
+    </p>
+
+    <h2>Connecting</h2>
+    <p>
+        Send the token as a Bearer token in the <code>Authorization</code> header of the
+        handshake. The server verifies it before the connection is accepted.
+    </p>
+    <pre><code>const { io } = require('socket.io-client');
+
+const socket = io('https://wom-websocket.onrender.com', {
+  extraHeaders: { authorization: `Bearer ${token}` },
+});
+
+socket.on('connect', () =&gt; console.log('connected', socket.id));
+socket.on('connect_error', (err) =&gt; console.log(err.message));</code></pre>
+
+    <h3>Token payload</h3>
+    <p>The server reads these claims from the JWT:</p>
+    <div class="table-wrap">
+        <table>
+            <tr><th>Claim</th><th>Type</th><th>Used for</th></tr>
+            <tr><td><code>sub</code></td><td>string / number</td><td>User ID. Decides which room the socket joins (<code>user:&lt;sub&gt;</code>).</td></tr>
+            <tr><td><code>username</code></td><td>string</td><td>Shown as the sender on messages and typing updates.</td></tr>
+            <tr><td><code>exp</code></td><td>number (Unix seconds)</td><td>Expiry. Used to schedule the <code>auth:error</code> warning.</td></tr>
+        </table>
+    </div>
+
+    <h3>Connection errors</h3>
+    <p>If the handshake is rejected, the client receives <code>connect_error</code> with one of these messages:</p>
+    <div class="table-wrap">
+        <table>
+            <tr><th><code>err.message</code></th><th><code>err.data</code></th><th>Cause</th></tr>
+            <tr><td><code>Token expired</code></td><td><code>{ status: 401 }</code></td><td>The JWT's <code>exp</code> is in the past. Get a new token and reconnect.</td></tr>
+            <tr><td><code>Authorization failed</code></td><td>none</td><td>Missing header, malformed token, or wrong signature.</td></tr>
+        </table>
+    </div>
+
+    <div class="note">
+        <strong>Browser clients:</strong> browsers cannot set custom headers on a WebSocket
+        connection. <code>extraHeaders</code> only works there with the polling transport.
+        Node clients and Postman work as shown above.
+    </div>
+
+    <h2>Rooms</h2>
+    <p>
+        On connect, each socket joins the room <code>user:&lt;sub&gt;</code>. All events
+        below are scoped to that room: only connections authenticated as the
+        <em>same user</em> receive them. Two different users do not see each other's
+        messages.
+    </p>
+
+    <h2>Events</h2>
+
+    <h3><span class="tag client">client → server</span><code>message:send</code></h3>
+    <p>Sends a chat message to the room.</p>
+    <div class="table-wrap">
+        <table>
+            <tr><th>Payload</th><td><code>string</code>: the message text. Leading and trailing whitespace is trimmed.</td></tr>
+            <tr><th>Result</th><td>The server emits <code>message:new</code> to <strong>everyone</strong> in the room, including the sender.</td></tr>
+        </table>
+    </div>
+    <pre><code>socket.emit('message:send', 'Hello!');</code></pre>
+
+    <h3><span class="tag server">server → client</span><code>message:new</code></h3>
+    <p>A new message was posted in the room.</p>
+    <pre><code>{
+  "user": "alice",          // sender's username
+  "text": "Hello!",         // trimmed message text
+  "sentAt": 1760870400000   // server time, ms since epoch
+}</code></pre>
+    <pre><code>socket.on('message:new', (msg) =&gt; {
+  console.log(`[${new Date(msg.sentAt).toLocaleTimeString()}] ${msg.user}: ${msg.text}`);
+});</code></pre>
+
+    <h3><span class="tag client">client → server</span><code>typing:update</code></h3>
+    <p>Shares what the user is currently typing (a live preview). Emit it on every input change, and with an empty string when the input is cleared or sent.</p>
+    <div class="table-wrap">
+        <table>
+            <tr><th>Payload</th><td><code>string</code>: the current contents of the input.</td></tr>
+            <tr><th>Result</th><td>The server emits <code>typing:live</code> to everyone in the room <strong>except</strong> the sender.</td></tr>
+        </table>
+    </div>
+    <pre><code>input.addEventListener('input', () =&gt; socket.emit('typing:update', input.value));</code></pre>
+
+    <h3><span class="tag server">server → client</span><code>typing:live</code></h3>
+    <p>Another connection in the room is typing. Key it by <code>id</code>, since one user can have several connections.</p>
+    <pre><code>{
+  "id": "pXf3...",   // socket ID of the typing connection
+  "user": "alice",   // username (missing when sent on disconnect)
+  "text": "Hel"      // current input; "" means stopped typing
+}</code></pre>
+    <p>
+        When a connection disconnects, the server sends <code>typing:live</code> with
+        <code>{ id, text: "" }</code> so other clients can remove its typing indicator.
+    </p>
+
+    <h3><span class="tag server">server → client</span><code>auth:error</code></h3>
+    <p>
+        Sent once, <strong>1 minute before</strong> the token expires (or right away if the
+        token has less than a minute left when you connect).
+    </p>
+    <pre><code>{
+  "status": 401,
+  "message": "Token expires in 1 minute"
+}</code></pre>
+    <p>
+        The server does not disconnect the socket when the token expires. The client
+        should get a new token and reconnect with it:
+    </p>
+    <pre><code>socket.on('auth:error', async () =&gt; {
+  const newToken = await refreshToken();   // your auth service
+  socket.io.opts.extraHeaders = { authorization: `Bearer ${newToken}` };
+  socket.disconnect().connect();
+});</code></pre>
+
+    <h2>Event summary</h2>
+    <div class="table-wrap">
+        <table>
+            <tr><th>Event</th><th>Direction</th><th>Payload</th><th>Delivered to</th></tr>
+            <tr><td><code>message:send</code></td><td>client → server</td><td><code>string</code></td><td>Triggers <code>message:new</code></td></tr>
+            <tr><td><code>message:new</code></td><td>server → client</td><td><code>{ user, text, sentAt }</code></td><td>Whole room, including sender</td></tr>
+            <tr><td><code>typing:update</code></td><td>client → server</td><td><code>string</code></td><td>Triggers <code>typing:live</code></td></tr>
+            <tr><td><code>typing:live</code></td><td>server → client</td><td><code>{ id, user, text }</code></td><td>Room, excluding sender</td></tr>
+            <tr><td><code>auth:error</code></td><td>server → client</td><td><code>{ status, message }</code></td><td>Only the expiring socket</td></tr>
+        </table>
+    </div>
+
+</main>
+</body>
+</html>
